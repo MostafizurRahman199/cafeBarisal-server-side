@@ -88,6 +88,7 @@ async function run() {
     const db = client.db("cafeBarisal");
     const menuCollection = db.collection("menu");
     const reviewCollection = db.collection("reviews");
+    const cartCollection = db.collection("carts");
 
    
 
@@ -144,6 +145,34 @@ app.get("/reviews", async(req, res)=>{
   res.send(result);
 })
 
+
+
+// 
+//order page route
+app.post("/cart", async(req,  res)=>{
+  try {
+    const cartItems = req.body;
+    console.log(cartItems);
+    const result = await cartCollection.insertOne(cartItems);
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({success:false, message: error.message})
+  }
+})
+
+
+
+//order page route
+app.get("/cart/:email", async(req, res)=>{
+  try {
+    const email = req.params.email;
+    console.log(email);
+    const result = await cartCollection.find({userEmail : email}).toArray();
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({success:false, message: error.message});
+  }
+})
 
 
 
