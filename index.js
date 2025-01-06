@@ -16,12 +16,9 @@ const PORT = process.env.PORT || 5000;
 // ___________step 2___for jwt and cookies storage
 app.use(
   cors({
-    origin: [
-      "http://localhost:4173",
-      "http://localhost:5173",
-      
-  
-    ],
+    origin: [ "http://localhost:4173", 
+              "http://localhost:5173"],
+
     methods: ["GET", "POST", "PUT", "DELETE"],
 
     credentials: true,
@@ -46,11 +43,10 @@ const logger = async (req, res, next) => {
 const verifyToken = async (req, res, next) => {
   console.log("Inside verify token middleware");
   const token = req?.cookies?.token;
-  console.log(token);
+  // console.log(token);
   if (!token) {
     return res.status(401).send({ message: "Unauthorized Access" });
   }
-
   // verify the token
   jwt.verify(token, process.env.JWT_SECRET, (error, decoded) => {
     if (error) {
@@ -79,7 +75,6 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-
     await client.connect();
     await client.db("admin").command({ ping: 1 });
 
@@ -87,14 +82,29 @@ async function run() {
 
     const db = client.db("cafeBarisal");
     const menuCollection = db.collection("menu");
+    const userCollection = db.collection("users");
     const reviewCollection = db.collection("reviews");
     const cartCollection = db.collection("carts");
-
-   
 
     console.log("Successfully connected to MongoDB!");
 
     // auth related APIS
+
+
+
+// use verify admin after verifyToken
+const verifyAdmin = async(req, res, next)=>{
+  const email = req?.user?.email;
+  const user = await userCollection.findOne({email});
+  const isAdmin = user?.role === "Admin";
+  if(!isAdmin){
+    return res.status(403).send({message: "Access Denied" });
+    }
+    console.log("Inside verify Admin");
+    next();
+}
+
+
 
     // ___________step 4___for jwt and cookies storage
 
@@ -115,6 +125,9 @@ async function run() {
         .send({ success: true });
     });
 
+
+
+
     app.post("/logout", async (req, res) => {
       res
         .clearCookie("token", {
@@ -126,59 +139,185 @@ async function run() {
 
 
 
+    // public route
+    //menuPage
+    app.get("/menu", async (req, res) => {
+      const result = await menuCollection.find({}).toArray();
+      res.send(result);
+    });
 
 
 
 
-// public route
-//menuPage
-app.get("/menu", async(req, res)=>{
-  const result = await menuCollection.find({}).toArray();
-  res.send(result);
-})
-
-
-//public route
-//testimonialSlider
-app.get("/reviews", async(req, res)=>{
-  const result = await reviewCollection.find({}).toArray();
-  res.send(result);
-})
+    //public route
+    //testimonialSlider
+    app.get("/reviews", async (req, res) => {
+      const result = await reviewCollection.find({}).toArray();
+      res.send(result);
+    });
 
 
 
-// 
-//order page route
-app.post("/cart", async(req,  res)=>{
-  try {
-    const cartItems = req.body;
-    console.log(cartItems);
-    const result = await cartCollection.insertOne(cartItems);
-    res.send(result);
-  } catch (error) {
-    res.status(500).send({success:false, message: error.message})
-  }
-})
+    //
+    //order page route
+    //private route
+
+    app.post("/cart", async (req, res) => {
+      try {
+        const cartItems = req.body;
+        console.log(cartItems);
+        const result = await cartCollection.insertOne(cartItems);
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ success: false, message: error.message });
+      }
+    });
+
+    //order page route
+    //private route
+
+    app.get("/cart/:email", async (req, res) => {
+      try {
+        const email = req.params.email;
+        console.log(email);
+        const result = await cartCollection
+          .find({ userEmail: email })
+          .toArray();
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ success: false, message: error.message });
+      }
+    });
+
+    // UserCartHome page
+    // private route
+    app.delete("/cart/:id", async (req, res) => {
+      try {
+        // const id = req.params.id;
+        console.log(id);
+        const result = await cartCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+        res.send(result);
+      } catch (error) {
+        res.catch(500).send({ success: false, message: error.message });
+      }
+    });
 
 
 
-//order page route
-app.get("/cart/:email", async(req, res)=>{
-  try {
-    const email = req.params.email;
-    console.log(email);
-    const result = await cartCollection.find({userEmail : email}).toArray();
-    res.send(result);
-  } catch (error) {
-    res.status(500).send({success:false, message: error.message});
-  }
-})
+    // users related api
+    app.post("/users", async (req, res) => {
+      try {
+        const user = req.body;
+        const email = user?.email;
+        const existingUser = await userCollection.findOne({ email });
+
+        if (existingUser) {
+          return res.send({ success: false, message: "User already exists" });
+        }
+
+        const result = await userCollection.insertOne(user);
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ success: false, message: error.message });
+      }
+    });
+
+    // _________Admin related API
+
+    //_______________________users related api
+
+    // AllUsers.jsx
+    //private route
+    app.get("/users", verifyToken, verifyAdmin, async (req, res) => {
+      try {
+        const users = await userCollection.find({}).toArray();
+        res.send(users);
+      } catch (error) {
+        res.status(500).send({ success: false, message: error.message });
+      }
+    });
 
 
 
- 
+
+    // AllUsers.jsx
+    //private route
+    //admin 
+    app.delete("/users/:id", verifyToken, verifyAdmin, async (req, res) => {
+      try {
+        const id = req.params.id;
+        const result = await userCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ success: false, message: error.message });
+      }
+    });
 
 
+// _____________update user role
+
+    app.post("/role", verifyToken, verifyAdmin, async (req, res) => {
+      try {
+        const data = req.body;
+        console.log(data);
+        const id = data.id;
+        const role = data.role;
+
+        const result = await userCollection.updateOne(
+          { _id: new ObjectId(id) }, // Match the user by ID
+          { $set: { role: role } } // Update the role
+        );
+
+        console.log(result);
+        res.send(result);
+      } catch (error) {
+        console.error("Error updating user role:", error);
+        res.status(500).json({ message: "Failed to update user role" });
+      }
+
+      // res.send(true);
+    });
+
+
+// ____________get login user data from user db
+
+    app.get("/user/admin/:email", verifyToken, async (req, res) => {
+      try {
+
+        const email = req?.params?.email;
+        // console.log("cookies : _______" , req?.cookies?.token);
+        // console.log("email : ______ ", email);
+
+        if(req?.user?.email !== email){
+          return res.status(403).json({ success: false, message: "forbidden access" });
+        }
+        if(email){
+          const result =  await userCollection.findOne({ email });
+          
+          console.log(result)
+          if (result) {
+            res.send(result);
+          } else {
+            res.send({ success: false, message: "User is not an admin" });
+          }
+        }
+
+
+      } catch (error) {
+        console.error("Error finding user:", error);
+        res.status(500).json({ message: "Failed to find user" });
+      }
+    });
+
+
+
+
+    // AllUsers.jsx
+    //private route
   } catch (error) {
     console.error("Error connecting to MongoDB", error);
   } finally {

@@ -15,6 +15,14 @@ app.get("/", (req, res)=>{
     res.send("Hello World")
 })
 
+app.post("/jwt", async(req, res)=>{
+    const user = req.body;
+    const token = jwt.sign(user, process.env.JWT_SECRET, {
+        expiresIn : "1h"
+    });
+    res.send(token);
+})
+
 
 app.listen(port, ()=>{
     console.log(`Server is running on port ${port}`);
