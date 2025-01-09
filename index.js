@@ -1,6 +1,6 @@
 const dotenv = require("dotenv");
 dotenv.config();
-const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId, CURSOR_FLAGS } = require("mongodb");
 const express = require("express");
 const cors = require("cors");
 
@@ -283,6 +283,73 @@ const verifyAdmin = async(req, res, next)=>{
     });
 
 
+
+
+
+
+//ManageItem.jsx
+//admin route
+    app.post("/update-menu-item", verifyToken, verifyAdmin, async (req, res) => {
+      try {
+        const { _id, name, recipe, category, price, image, imageUrls } = req.body;
+    
+        // Log received data for debugging
+        // console.log("Update Data Received:", req.body);
+    
+        // Build the update object dynamically
+        const updateFields = {
+          name,
+          recipe,
+          category,
+          price: parseFloat(price), // Ensure price is stored as a number
+        };
+    
+        // Conditionally add image or imageUrls to the update object
+        if (image) {
+          updateFields.image = image;
+        }
+        if (imageUrls && Array.isArray(imageUrls)) {
+          updateFields.imageUrls = imageUrls;
+        }
+
+
+        const query = {
+          $or: [
+            { _id: new ObjectId(_id) }, // Match ObjectId
+            { _id: _id }, // Match string id
+          ],
+        }
+    
+        // Update the menu item in the database
+        const result = await menuCollection.updateOne(
+          query, // Match the menu item by ID
+          { $set: updateFields } // Update the specified fields
+        );
+    
+        // Log the result for debugging
+        // console.log("Update Result:", result);
+    
+        // Respond with the result
+        if (result.modifiedCount > 0) {
+          res.status(200).json({ message: "Menu item updated successfully" });
+        } else {
+          res.status(404).json({ message: "Menu item not found or no changes made" });
+        }
+      } catch (error) {
+        console.error("Error updating menu item:", error);
+        res.status(500).json({ message: "Failed to update menu item" });
+      }
+    });
+    
+
+
+
+
+
+
+
+
+
 // ____________get login user data from user db
 
     app.get("/user/admin/:email", verifyToken, async (req, res) => {
@@ -312,6 +379,69 @@ const verifyAdmin = async(req, res, next)=>{
         res.status(500).json({ message: "Failed to find user" });
       }
     });
+
+
+
+
+    // AddMenuItem.jsx
+    //admin route
+    //private
+
+    app.post("/upload-menu-item",verifyToken, verifyAdmin, async (req, res) => {
+      try {
+        const { name, category, price, recipe, imageUrls } = req.body;
+        
+        // Create menu item object
+        const menuItem = {
+          name,
+          category,
+          price: parseFloat(price), // Ensure price is a number
+          recipe,
+          imageUrls,
+          createdAt: new Date(),
+        };
+          console.log(menuItem);
+        // Insert menu item into MongoDB
+        const result = await menuCollection.insertOne(menuItem);
+    
+        if (result.acknowledged) {
+          res.send(result);
+        } else {
+          res.status(500).json({ message: "Failed to add menu item." });
+        }
+      } catch (error) {
+        console.error("Error uploading menu item:", error.message);
+        res.status(500).json({ message: "Internal server error." });
+      }
+    });
+
+
+
+        // ManageMenuItem.jsx
+    //private route
+    //admin 
+    app.delete("/menu-item/:id", verifyToken, verifyAdmin, async (req, res) => {
+      try {
+        const id = req.params.id;
+        console.log(id);
+        const query = {
+          $or: [
+            { _id: new ObjectId(id) }, // Match ObjectId
+            { _id: id }, // Match string id
+          ],
+        };
+        const result = await menuCollection.deleteOne(query);
+        console.log(result);
+       if(result.deletedCount>0){
+         res.send(result);
+       }
+      } catch (error) {
+        res.status(500).send({ success: false, message: error.message });
+      }
+    });
+
+
+
 
 
 
