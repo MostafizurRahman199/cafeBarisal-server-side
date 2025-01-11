@@ -3,6 +3,7 @@ dotenv.config();
 const { MongoClient, ServerApiVersion, ObjectId, CURSOR_FLAGS } = require("mongodb");
 const express = require("express");
 const cors = require("cors");
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 // ___________step 1___for jwt and cookies storage
 
@@ -41,7 +42,7 @@ const logger = async (req, res, next) => {
 // ___________step 5___for jwt and cookies storage
 
 const verifyToken = async (req, res, next) => {
-  console.log("Inside verify token middleware");
+  // console.log("Inside verify token middleware");
   const token = req?.cookies?.token;
   // console.log(token);
   if (!token) {
@@ -85,6 +86,7 @@ async function run() {
     const userCollection = db.collection("users");
     const reviewCollection = db.collection("reviews");
     const cartCollection = db.collection("carts");
+    const paymentCollection  = db.collection("payments");
 
     console.log("Successfully connected to MongoDB!");
 
@@ -100,7 +102,7 @@ const verifyAdmin = async(req, res, next)=>{
   if(!isAdmin){
     return res.status(403).send({message: "Access Denied" });
     }
-    console.log("Inside verify Admin");
+    // console.log("Inside verify Admin");
     next();
 }
 
@@ -193,14 +195,14 @@ const verifyAdmin = async(req, res, next)=>{
     // private route
     app.delete("/cart/:id", async (req, res) => {
       try {
-        // const id = req.params.id;
-        console.log(id);
+        const id = req.params.id;
+        // console.log(id);
         const result = await cartCollection.deleteOne({
           _id: new ObjectId(id),
         });
         res.send(result);
       } catch (error) {
-        res.catch(500).send({ success: false, message: error.message });
+        res.status(500).send({ success: false, message: error.message });
       }
     });
 
@@ -439,6 +441,394 @@ const verifyAdmin = async(req, res, next)=>{
         res.status(500).send({ success: false, message: error.message });
       }
     });
+
+
+
+    //____________ stripe payment intent
+
+    app.post('/create-payment-intent', async (req, res) => {
+      try {
+        const  {totalPrice} = req.body;
+        // console.log(totalPrice);
+    
+        // Validate totalPrice
+        if (!totalPrice || totalPrice <= 0) {
+          return res.status(400).send({ error: 'Invalid total price' });
+        }
+    
+        // // Create a PaymentIntent
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount: Math.round(totalPrice * 100), // Convert to cents for USD
+          currency: 'usd',
+          payment_method_types: ['card'], // Specify payment methods
+        });
+
+        // console.log(paymentIntent.client_secret);
+    
+        // Send client_secret to the client
+        res.status(200).send({
+          client_secret: paymentIntent.client_secret,
+        });
+      } catch (error) {
+        console.error('Error creating PaymentIntent:', error);
+        res.status(500).send({ error: error.message });
+      }
+    });
+
+
+
+
+
+    app.post('/payments', async (req, res) => {
+      try {
+        const  payment = req.body;
+        const paymentInsertResult = await paymentCollection.insertOne(payment);
+
+
+        // delete each item from the card
+        const query = {
+          $or: [
+            { _id: { $in: payment.cartIds.map(id => new ObjectId(id)) } },
+            { _id: { $in: payment.cartIds.map(id =>  id ) } }, 
+          ],
+        };
+
+        const deleteResult = await cartCollection.deleteMany(query);
+    
+        console.log(result);
+        res.send(paymentInsertResult. deleteResult);
+    
+
+      } catch (error) {
+        console.error('Error creating PaymentIntent:', error);
+        res.status(500).send({ error: error.message });
+      }
+    });
+
+
+
+    
+
+
+    app.get("/payment-history/:email", verifyToken, async (req, res) => {
+      try {
+
+        const email = req?.params?.email;
+        // console.log("cookies : _______" , req?.cookies?.token);
+        // console.log("email : ______ ", email);
+
+        console.log(email);
+        if(req?.user?.email !== email){
+          return res.status(403).json({ success: false, message: "forbidden access" });
+        }
+        if(email){
+          const result =  await paymentCollection.find({ email }).toArray();
+          
+          // console.log(result)
+          if (result) {
+            res.send(result);
+          } else {
+            res.send({ success: false, message: "error" });
+          }
+        }
+
+
+      } catch (error) {
+        console.error("Error finding user:", error);
+        res.status(500).json({ message: "Failed to find user" });
+      }
+    });
+
+
+
+
+    // app.get("/admin-stats/:email", verifyToken, async (req, res) => {
+    //   try {
+    //     const email = req?.params?.email;
+    
+
+    //     const menuCollection = db.collection("menu");
+    //     const userCollection = db.collection("users");
+    //     const reviewCollection = db.collection("reviews");
+    //     const cartCollection = db.collection("carts");
+    //     const paymentCollection  = db.collection("payments");
+
+
+    //     // Ensure the email in the token matches the requested email
+    //     if (req?.user?.email !== email) {
+    //       return res.status(403).json({ success: false, message: "Forbidden access" });
+    //     }
+    
+    //     // Access your database collections
+    //     const paymentCount = await paymentCollection.countDocuments({});
+    //     const userCount = await userCollection.countDocuments({});
+    //     const menuCount = await menuCollection.countDocuments({});
+    //     const orderCount = await paymentCollection.countDocuments({});
+    
+
+
+    //     // Aggregate revenue from paymentCollection
+    //     const revenueResult = await paymentCollection
+    //       .aggregate([
+    //         {
+    //           $group: {
+    //             _id: null,
+    //             totalRevenue: { $sum: { $toDouble: "$amount" } }, // Convert amount to double and sum it
+    //           },
+    //         },
+    //       ])
+    //       .toArray();
+    //     const revenue = revenueResult[0]?.totalRevenue || 0;
+    
+
+
+    //     // Aggregate category-wise item counts from menuCollection
+    //     const categoryCounts = await menuCollection
+    //       .aggregate([
+    //         {
+    //           $group: {
+    //             _id: "$category",
+    //             count: { $sum: 1 }, // Count items per category
+    //           },
+    //         },
+    //       ])
+    //       .toArray();
+
+
+    //       // below data from paymentCollection
+    //       // where have itemId , use itemId to find it category from menuCollection
+    //       // then menuCollection have price now final result will categorywise prize, 
+    //       // actually i want to  know which the amount / price categorywise that sold
+
+    //       //paymentCollection data
+    //       // {"_id":{"$oid":"67811b66006e4a48afb2165e"},"email":"mostafizurrahmanofficial2025@gmail.com","name":"Md. Mostafizur Rahman","amount":{"$numberDouble":"19.5"},"date":"2025-01-10T13:06:46.318Z","transactionId":"pi_3Qfhv82Mif9qfo6g0MoOQCWt","cartId":["677fd7d7dcacea695de9d6bb","677fd7d9dcacea695de9d6bc"],"itemId":["642c155b2c4774f05c36eeab","642c155b2c4774f05c36eea7"],"status":"pending"}
+
+
+    //       //menuCollection data
+    //       // {"_id":"642c155b2c4774f05c36eeaa","name":"Fire Fly Special","recipe":"Chargrilled fresh tuna steak (served medium rare) on classic Niçoise salad with French beans.","image":"https://cristianonew.ukrdevs.com/wp-content/uploads/2016/08/product-1-370x247.jpg","category":"salad","price":{"$numberDouble":"14.7"}}
+    
+    //     // Transform categoryCounts into a more readable format
+    //     const categoryWiseCount = {};
+    //     categoryCounts.forEach((category) => {
+    //       categoryWiseCount[category._id] = category.count;
+    //     });
+    
+
+
+    //     // Return the aggregated stats including revenue and category-wise counts
+    //     res.status(200).json({
+    //       paymentCount,
+    //       userCount,
+    //       menuCount,
+    //       orderCount,
+    //       revenue,
+    //       categoryWiseCount, // Include category-wise counts in the response
+    //     });
+    //   } catch (error) {
+    //     console.error("Error fetching admin stats:", error);
+    //     res.status(500).json({ success: false, message: "Failed to retrieve admin stats" });
+    //   }
+    // });
+    
+
+
+
+
+
+    // app.get("/admin-stats/:email", verifyToken, async (req, res) => {
+    //   try {
+    //     const email = req?.params?.email;
+    
+    //     const menuCollection = db.collection("menu");
+    //     const userCollection = db.collection("users");
+    //     const paymentCollection = db.collection("payments");
+    
+    //     // Ensure the email in the token matches the requested email
+    //     if (req?.user?.email !== email) {
+    //       return res.status(403).json({ success: false, message: "Forbidden access" });
+    //     }
+    
+    //     // Basic counts
+    //     const paymentCount = await paymentCollection.countDocuments({});
+    //     const userCount = await userCollection.countDocuments({});
+    //     const menuCount = await menuCollection.countDocuments({});
+    
+    //     // Aggregate total revenue
+    //     const revenueResult = await paymentCollection
+    //       .aggregate([
+    //         {
+    //           $group: {
+    //             _id: null,
+    //             totalRevenue: { $sum: { $toDouble: "$amount" } },
+    //           },
+    //         },
+    //       ])
+    //       .toArray();
+    //     const revenue = revenueResult[0]?.totalRevenue || 0;
+    
+    //     // Category-wise item counts from menuCollection
+    //     const categoryCounts = await menuCollection
+    //       .aggregate([
+    //         {
+    //           $group: {
+    //             _id: "$category",
+    //             count: { $sum: 1 },
+    //           },
+    //         },
+    //       ])
+    //       .toArray();
+    
+    //     const categoryWiseCount = {};
+    //     categoryCounts.forEach((category) => {
+    //       categoryWiseCount[category._id] = category.count;
+    //     });
+    
+    //     // Calculate category-wise revenue
+    //     const paymentData = await paymentCollection.find({}).toArray();
+    
+    //     const categoryWiseRevenue = {};
+    
+    //     for (const payment of paymentData) {
+    //       const { itemIds } = payment;
+    
+    //       if (!itemIds || !itemIds.length) continue; // Skip if no itemIds
+    
+    //       // Convert itemIds to ObjectId format for querying
+    //       //some id are store as ObjectId and some are string in data base 
+    //       //so I did twice also do it
+    //       let objectIds = itemIds.map((id) => new ObjectId(id));
+    //        objectIds = itemIds.map((id) => (id));
+          
+    //       // console.log(objectIds);
+
+    
+    //       // // Fetch menu items corresponding to itemIds
+    //       const menuItems = await menuCollection.find({ _id: { $in: objectIds } }).toArray();
+    //         // console.log(menuItems);
+    
+    //       // Process each menu item and calculate category-wise revenue
+    //       menuItems.forEach((item) => {
+    //         const category = item.category;
+    //         console.log(category)
+    //         const price = parseFloat(item.price.$numberDouble || item.price);
+    
+    //         if (!categoryWiseRevenue[category]) {
+    //           categoryWiseRevenue[category] = 0;
+    //         }
+    
+    //         categoryWiseRevenue[category] += price;
+    //       });
+    //     }
+    
+    //     // Response
+    //     res.status(200).json({
+    //       paymentCount,
+    //       userCount,
+    //       menuCount,
+    //       revenue,
+    //       categoryWiseCount,
+    //       categoryWiseRevenue, // Include category-wise revenue in the response
+    //     });
+    //   } catch (error) {
+    //     console.error("Error fetching admin stats:", error);
+    //     res.status(500).json({ success: false, message: "Failed to retrieve admin stats" });
+    //   }
+    // });
+    
+
+
+    app.get("/admin-stats/:email", verifyToken, async (req, res) => {
+      try {
+        const email = req?.params?.email;
+    
+        const menuCollection = db.collection("menu");
+        const userCollection = db.collection("users");
+        const paymentCollection = db.collection("payments");
+    
+        // Ensure the email in the token matches the requested email
+        if (req?.user?.email !== email) {
+          return res.status(403).json({ success: false, message: "Forbidden access" });
+        }
+    
+        // Basic counts
+        const paymentCount = await paymentCollection.countDocuments({});
+        const userCount = await userCollection.countDocuments({});
+        const menuCount = await menuCollection.countDocuments({});
+    
+        // Aggregate total revenue
+        const revenueResult = await paymentCollection.aggregate([
+          {
+            $group: {
+              _id: null,
+              totalRevenue: { $sum: { $toDouble: "$amount" } },
+            },
+          },
+        ]).toArray();
+        const revenue = revenueResult[0]?.totalRevenue || 0;
+    
+        // Category-wise item counts from menuCollection
+        const categoryCounts = await menuCollection.aggregate([
+          {
+            $group: {
+              _id: "$category",
+              count: { $sum: 1 },
+            },
+          },
+        ]).toArray();
+    
+        const categoryWiseCount = categoryCounts.reduce((acc, { _id, count }) => {
+          acc[_id] = count;
+          return acc;
+        }, {});
+    
+        // Calculate category-wise revenue using aggregation
+        const categoryWiseRevenueArray = await paymentCollection.aggregate([
+          {
+            $lookup: {
+              from: "menu",
+              localField: "itemIds",
+              foreignField: "_id",
+              as: "menuItems",
+            },
+          },
+          { $unwind: "$menuItems" }, // Deconstruct the menuItems array
+          {
+            $group: {
+              _id: "$menuItems.category",
+              totalRevenue: { $sum: { $toDouble: "$menuItems.price" } },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              category: "$_id",
+              totalRevenue: 1,
+            },
+          },
+        ]).toArray();
+    
+        const categoryWiseRevenue = categoryWiseRevenueArray.reduce((acc, { category, totalRevenue }) => {
+          acc[category] = totalRevenue;
+          return acc;
+        }, {});
+    
+        // Response
+        res.status(200).json({
+          paymentCount,
+          userCount,
+          menuCount,
+          revenue,
+          categoryWiseCount,
+          categoryWiseRevenue,
+        });
+      } catch (error) {
+        console.error("Error fetching admin stats:", error);
+        res.status(500).json({ success: false, message: "Failed to retrieve admin stats" });
+      }
+    });
+    
+
+
 
 
 
