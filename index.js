@@ -819,9 +819,10 @@ async function run() {
 
     //______________________SSL Commerz Payment Gateway Integration
 
-    const store_id = "baris6795d9cf67b3a";
-    const store_passwd = "baris6795d9cf67b3a@ssl";
-    const api_url = "https://sandbox.sslcommerz.com/gwprocess/v4/api.php";
+
+    const store_id = process.env.store_id;
+    const store_passwd = process.env.store_passwd;
+    const api_url = process.env.api_url;
 
 
 
@@ -845,10 +846,10 @@ async function run() {
         total_amount: amount,
         currency: "BDT",
         tran_id: trxID,
-        success_url: "http://localhost:5000/success-payment",
-        fail_url: "http://localhost:5173/fail-payment",
-        cancel_url: "http://localhost:5173/cancel-payment",
-        ipn_url: "http://localhost:5000/ipn-payment",
+        success_url: "https://cafebarisalserverside.vercel.app/success-payment",
+        fail_url: "https://cafebarisal-by-mostafiz.netlify.app/fail-payment",
+        cancel_url: "https://cafebarisal-by-mostafiz.netlify.app/cancel-payment",
+        ipn_url: "https://cafebarisalserverside.vercel.app/ipn-payment",
         shipping_method: "Courier",
         product_name: "Product Name",
         product_category: "General",
